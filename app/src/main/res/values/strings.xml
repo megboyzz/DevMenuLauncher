@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">DevMenuLauncher</string>
+    <string name="enable_devmenu">Enable DevMenu</string>
+    <string name="ddd">ddd</string>
+</resources>

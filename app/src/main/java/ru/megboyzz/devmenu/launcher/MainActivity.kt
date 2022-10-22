@@ -7,31 +7,39 @@ import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.util.Log
+import android.widget.ToggleButton
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Alignment.Companion.Center
+import androidx.compose.ui.Alignment.Companion.CenterHorizontally
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import ru.megboyzz.devmenu.launcher.ui.theme.MainBlue
 import ru.megboyzz.devmenu.launcher.ui.theme.MainWhite
 import java.net.NetworkInterface
@@ -51,13 +59,14 @@ class MainActivity : ComponentActivity() {
         val packages = pm.getInstalledPackages(PackageManager.GET_META_DATA or PackageManager.GET_SERVICES)
         val devMenuAppsList = mutableListOf<PackageInfo>()
 
-        //Шерстим приложуху
+        //Шерстим телефон на наличие приложухи с интегрированным сервисом
         thread {
+            Thread.sleep(500)
             for (packageInfo in packages) {
                 val services = packageInfo.services
                 if (services != null)
                     for (service in services)
-                        if(service.name == devMenuPackageName) devMenuAppsList += packageInfo
+                        devMenuAppsList += packageInfo
 
             }
         }
@@ -66,7 +75,7 @@ class MainActivity : ComponentActivity() {
 
             Scaffold(
                 topBar = { AppBar() },
-                content = { MainContent() },
+                content = { MainContent(devMenuAppsList) },
                 backgroundColor = MainWhite
             )
 
@@ -131,12 +140,14 @@ fun getWifiApIpAddress(): String? {
     return null
 }
 
-@Preview
+
 @Composable
-fun MainContent(){
+fun MainContent(list: List<PackageInfo>){
     Column {
 
-        val context = LocalContext.current
+        val rememberList = remember {
+            mutableStateOf(list)
+        }
 
         val text = remember {
             mutableStateOf("")
@@ -159,16 +170,61 @@ fun MainContent(){
         }
 
         Text(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(80.dp),
             textAlign = TextAlign.Center,
             text = Snapshot.current.enter { text.value }
         )
-
-        EventLogField()
+        rememberList.value.forEach { devMenuAppCard(it) }
 
     }
 
 
+}
+
+@Composable
+fun devMenuAppCard(info: PackageInfo){
+    val current = LocalContext.current
+    val Icon = info.applicationInfo.loadIcon(current.packageManager)
+    val name = info.applicationInfo.loadLabel(current.packageManager).toString()
+    Box(Modifier.padding(10.dp)) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, MainBlue),
+            elevation = 0.dp
+        ) {
+
+            Box(Modifier.padding(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ){
+
+                    //
+                    val portText = remember {mutableStateOf("")}
+                    Row{
+                        Image(rememberDrawablePainter(Icon), "")
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(text = name)
+                            PortInput(port = portText)
+                        }
+                    }
+                    //TODO реализовать проверку работы сервиса и запись результата в состояние
+                    val devMenuEnabled = remember { mutableStateOf(false)}
+                    Switch(
+                        checked = devMenuEnabled.value,
+                        onCheckedChange = {
+                            devMenuEnabled.value = it
+                        }
+                    )
+                }
+            }
+        }
+    }
 }
 
 
@@ -214,19 +270,23 @@ fun TextLabel(
     )
 }
 
-@Preview
 @Composable
-fun PortInput(){
+fun PortInput(port: MutableState<String>){
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(5.dp),
-        contentAlignment = Center
+            .padding(0.dp, 5.dp, 0.dp, 0.dp)
     ){
         BasicTextField(
-            value = "8080",
-            onValueChange = {},
+            value = port.value,
+            onValueChange = {
+                if(it.length <= 4)
+                port.value = it
+            },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done
+            ),
             textStyle = LocalTextStyle.current
                 .copy(fontFamily = FontFamily.Default)
                 .copy(fontWeight = FontWeight.W400)
@@ -252,14 +312,16 @@ fun PortInput(){
 fun EventLogField(){
 
     BasicTextField(
-        value = "lol",
-        onValueChange = {},
+        value = "",
+        onValueChange = {
+
+        },
         readOnly = true,
         decorationBox = { innerText ->
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight()
+                    .height(200.dp)
                     .padding(10.dp, 0.dp, 10.dp, 30.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(Color.White)

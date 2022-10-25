@@ -1,18 +1,12 @@
 package ru.megboyzz.devmenu.launcher
 
-import android.content.ComponentName
-import android.content.Context
-import android.content.pm.PackageInfo
-import android.content.pm.PackageManager
-import android.net.wifi.WifiManager
+import android.app.Application
+import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.util.Log
-import android.widget.ToggleButton
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,17 +14,14 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Alignment.Companion.Center
-import androidx.compose.ui.Alignment.Companion.CenterHorizontally
+import androidx.compose.ui.Alignment.Companion.CenterVertically
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -39,47 +30,36 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import ru.megboyzz.devmenu.launcher.ui.theme.MainBlue
 import ru.megboyzz.devmenu.launcher.ui.theme.MainWhite
-import java.net.NetworkInterface
-import java.net.SocketException
-import kotlin.concurrent.thread
+import java.net.ServerSocket
 
 
 class MainActivity : ComponentActivity() {
 
-    private val devMenuPackageName = "com.devmenu.server.AppService"
     private val TAG = "MainActivity"
+    lateinit var mViewModel: MainViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val pm = packageManager
-        val packages = pm.getInstalledPackages(PackageManager.GET_META_DATA or PackageManager.GET_SERVICES)
-        val devMenuAppsList = mutableListOf<PackageInfo>()
-
-        //Шерстим телефон на наличие приложухи с интегрированным сервисом
-        thread {
-            Thread.sleep(500)
-            for (packageInfo in packages) {
-                val services = packageInfo.services
-                if (services != null)
-                    for (service in services)
-                        devMenuAppsList += packageInfo
-
-            }
-        }
+        mViewModel = MainViewModel(this.application)
 
         setContent {
 
             Scaffold(
                 topBar = { AppBar() },
-                content = { MainContent(devMenuAppsList) },
+                content = { MainContent() },
                 backgroundColor = MainWhite
             )
 
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        mViewModel.loadDevMenuAppsList()
     }
 }
 
@@ -100,94 +80,65 @@ fun TextInCenter(
     }
 }
 
-fun isHotSpotEnabled(context: Context): Boolean {
-    val wifiManager =
-        context
-            .applicationContext
-            .getSystemService(Context.WIFI_SERVICE) as WifiManager
-    val method = wifiManager.javaClass.getMethod("getWifiApState")
-    method.isAccessible = true
-    /*
-    AP_STATE_DISABLING = 10;
-    AP_STATE_DISABLED = 11;
-    AP_STATE_ENABLING = 12;
-    AP_STATE_ENABLED = 13;
-    AP_STATE_FAILED = 14;
-     */
-    return (method.invoke(wifiManager) as Int) == 13
-}
-
-//TODO говнокод переписать
-fun getWifiApIpAddress(): String? {
-    try {
-        val en = NetworkInterface.getNetworkInterfaces()
-        while (en.hasMoreElements()) {
-            val intf = en.nextElement()
-            if (intf.name.contains("wlan")) {
-                val enumIpAddr = intf.inetAddresses
-                while (enumIpAddr.hasMoreElements()) {
-                    val inetAddress = enumIpAddr.nextElement()
-                    if (!inetAddress.isLoopbackAddress && inetAddress.address.size == 4) {
-                        return inetAddress.hostAddress
-                    }
-                }
-                continue
-            }
-        }
-    } catch (ex: SocketException) {
-        Log.e("ex", ex.toString())
-    }
-    return null
-}
-
 
 @Composable
-fun MainContent(list: List<PackageInfo>){
+fun MainContent(){
     Column {
 
-        val rememberList = remember {
-            mutableStateOf(list)
+        val context = LocalContext.current
+        val mViewModel: MainViewModel =
+            viewModel(factory = MainViewModelFactory(context.applicationContext as Application))
+        val observeAsState = mViewModel.ip.observeAsState()
+        observeAsState.value?.let {
+            Text(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp),
+                textAlign = TextAlign.Center,
+                text = it
+            )
         }
 
-        val text = remember {
-            mutableStateOf("")
-        }
-        var ip = getWifiApIpAddress()
-        if(ip != null)
-            text.value = "IP адрес текущей сети: $ip"
-        else
-            text.value = "Для использования DevMenu подключитесь к WiFi или включите точку доступа"
+        val devMenuList by mViewModel.devMenuAppsList.observeAsState()
 
-        thread {
-            Thread.sleep(1000)
-            while(true){
-                ip = getWifiApIpAddress()
-                if(ip != null)
-                    text.value = "IP адрес текущей сети: $ip"
-                else
-                    text.value = "Для использования DevMenu подключитесь к WiFi или включите точку доступа"
+        if(devMenuList?.isEmpty() == true) {
+            CircularProgressIndicator()
+        }
+        else {
+            devMenuList?.forEach {
+                devMenuAppCard(it)
             }
         }
 
-        Text(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(80.dp),
-            textAlign = TextAlign.Center,
-            text = Snapshot.current.enter { text.value }
-        )
-        rememberList.value.forEach { devMenuAppCard(it) }
 
     }
 
 
 }
 
+
+@Preview(showBackground = true)
 @Composable
-fun devMenuAppCard(info: PackageInfo){
-    val current = LocalContext.current
-    val Icon = info.applicationInfo.loadIcon(current.packageManager)
-    val name = info.applicationInfo.loadLabel(current.packageManager).toString()
+fun cardPrev(){
+    val drawable = LocalContext
+        .current
+        .getDrawable(R.drawable.ic_launcher_background)
+    if(drawable != null) {
+        val devMenuApp = DevMenuApp(
+            "NFSMW",
+            drawable,
+            ""
+        )
+        devMenuAppCard(devMenuApp)
+    }
+}
+
+@Composable
+fun devMenuAppCard(app: DevMenuApp){
+
+    val portText = remember {mutableStateOf("")}
+    val context = LocalContext.current
+
     Box(Modifier.padding(10.dp)) {
         Card(
             modifier = Modifier
@@ -197,27 +148,42 @@ fun devMenuAppCard(info: PackageInfo){
             elevation = 0.dp
         ) {
 
-            Box(Modifier.padding(10.dp)) {
+            Box(Modifier.padding(10.dp)){
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Center),
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ){
-
-                    //
-                    val portText = remember {mutableStateOf("")}
-                    Row{
-                        Image(rememberDrawablePainter(Icon), "")
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text(text = name)
-                            PortInput(port = portText)
+                    Image(rememberDrawablePainter(app.icon), "")
+                    Column(Modifier.padding(5.dp)) {
+                        Text(
+                            text = app.name,
+                            //modifier = Modifier.fillMaxWidth()
+                        )
+                        PortInput(portText)
+                        Button(
+                            onClick = {
+                                val serverSocket = ServerSocket(0)
+                                portText.value = serverSocket.localPort.toString()
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Text(
+                                text = "Сгенерировать",
+                                fontWeight = FontWeight.Light,
+                                fontSize = 10.sp
+                            )
                         }
                     }
-                    //TODO реализовать проверку работы сервиса и запись результата в состояние
                     val devMenuEnabled = remember { mutableStateOf(false)}
                     Switch(
                         checked = devMenuEnabled.value,
                         onCheckedChange = {
+                            if(it)
+                                app.start(portText.value.toInt(), context)
+                            else
+                                app.stop(context)
                             devMenuEnabled.value = it
                         }
                     )
@@ -226,6 +192,9 @@ fun devMenuAppCard(info: PackageInfo){
         }
     }
 }
+
+
+
 
 
 @Preview

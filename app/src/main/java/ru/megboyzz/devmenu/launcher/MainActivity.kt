@@ -17,9 +17,12 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Alignment.Companion.Center
+import androidx.compose.ui.Alignment.Companion.CenterHorizontally
 import androidx.compose.ui.Alignment.Companion.CenterVertically
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.focusModifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -88,27 +91,34 @@ fun MainContent(){
         val context = LocalContext.current
         val mViewModel: MainViewModel =
             viewModel(factory = MainViewModelFactory(context.applicationContext as Application))
-        val observeAsState = mViewModel.ip.observeAsState()
-        observeAsState.value?.let {
-            Text(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp),
-                textAlign = TextAlign.Center,
-                text = it
-            )
+        val ip by mViewModel.ip.observeAsState()
+
+        val message = remember {
+            mutableStateOf("")
+        }
+
+        if(ip != null)
+            message.value = R.string.wireless_state_connected.instance() + ip
+        else
+            message.value = R.string.wireless_state_not_connected.instance()
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(80.dp),
+            horizontalAlignment = CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(message.value)
         }
 
         val devMenuList by mViewModel.devMenuAppsList.observeAsState()
 
-        if(devMenuList?.isEmpty() == true) {
-            CircularProgressIndicator()
-        }
-        else {
+        if(devMenuList?.isEmpty() == true) CircularProgressIndicator()
+        else
             devMenuList?.forEach {
                 devMenuAppCard(it)
             }
-        }
 
 
     }
@@ -152,17 +162,33 @@ fun devMenuAppCard(app: DevMenuApp){
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .height(100.dp)
                         .align(Center),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ){
-                    Image(rememberDrawablePainter(app.icon), "")
-                    Column(Modifier.padding(5.dp)) {
+                    Column( //
+                        modifier = Modifier.fillMaxHeight(),
+                        verticalArrangement = Arrangement.Center
+                    ){
+                        Image(
+                            modifier = Modifier.scale(1.5f),
+                            painter = rememberDrawablePainter(app.icon),
+                            contentDescription = ""
+                        )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 5.dp)
+                            .width(150.dp),
+                        horizontalAlignment = CenterHorizontally
+                    ) {
                         Text(
                             text = app.name,
                             //modifier = Modifier.fillMaxWidth()
                         )
                         PortInput(portText)
                         Button(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
                             onClick = {
                                 val serverSocket = ServerSocket(0)
                                 portText.value = serverSocket.localPort.toString()
@@ -176,17 +202,22 @@ fun devMenuAppCard(app: DevMenuApp){
                             )
                         }
                     }
-                    val devMenuEnabled = remember { mutableStateOf(false)}
-                    Switch(
-                        checked = devMenuEnabled.value,
-                        onCheckedChange = {
-                            if(it)
-                                app.start(portText.value.toInt(), context)
-                            else
-                                app.stop(context)
-                            devMenuEnabled.value = it
-                        }
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxHeight(),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        val devMenuEnabled = remember { mutableStateOf(false) }
+                        Switch(
+                            checked = devMenuEnabled.value,
+                            onCheckedChange = {
+                                if (it)
+                                    app.start(portText.value.toInt(), context)
+                                else
+                                    app.stop(context)
+                                devMenuEnabled.value = it
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -246,6 +277,7 @@ fun PortInput(port: MutableState<String>){
             .padding(0.dp, 5.dp, 0.dp, 0.dp)
     ){
         BasicTextField(
+            modifier = Modifier.fillMaxWidth(),
             value = port.value,
             onValueChange = {
                 if(it.length <= 4)
